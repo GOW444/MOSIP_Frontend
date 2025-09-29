@@ -63,7 +63,7 @@ if uploaded_file is not None:
 
     with col1:
         image = Image.open(uploaded_file)
-        st.image(image, caption="Uploaded Image", use_column_width=True)
+        st.image(image, caption="Uploaded Image", use_container_width=True)
         document_type = st.selectbox(
             "Document Type (for validation)",
             ["", "aadhaar", "pan", "passport", "driving_license", "voter_id"]
@@ -76,7 +76,8 @@ if uploaded_file is not None:
         with tab1:
             if st.button("Extract Text", key="extract", use_container_width=True):
                 with st.spinner("Extracting text..."):
-                    files = {"file": uploaded_file.getvalue()}
+                    # Fixed file upload format for API compatibility
+                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
                     data = {
                         "confidence_threshold": confidence_threshold,
                         "preprocess": preprocess,
@@ -114,7 +115,8 @@ if uploaded_file is not None:
             validate_fields = st.checkbox("Validate extracted fields", value=True)
             if st.button("Process Complete Document", key="process", use_container_width=True, type="primary"):
                 with st.spinner("Processing document..."):
-                    files = {"file": uploaded_file.getvalue()}
+                    # Fixed file upload format for API compatibility
+                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
                     data = {
                         "confidence_threshold": confidence_threshold,
                         "document_type": document_type if document_type else None,
@@ -135,4 +137,3 @@ if uploaded_file is not None:
 # --- Sidebar Footer ---
 st.sidebar.markdown("---")
 st.sidebar.info("**MOSIP OCR API v1**")
-
