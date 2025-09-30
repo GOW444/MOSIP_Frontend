@@ -181,11 +181,12 @@ def main():
             - Use high-resolution images with clear text
             - Ensure good contrast between text and background
             - Avoid blurry or distorted images
-            - Upload zoomed imaged if text is small
+            - Upload zoomed images if text is small
             """)
 
 if __name__ == "__main__":
     main()
+
 
 
 
