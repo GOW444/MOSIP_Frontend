@@ -1,24 +1,22 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import easyocr
-import cv2
-import numpy as np
 from PIL import Image
+import easyocr
+import numpy as np
 import io
-import uvicorn
-from typing import List, Dict, Any
-import tempfile
-import os
+import difflib
+from typing import Optional
+import torch
+from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
-# Initialize FastAPI app
 app = FastAPI(
     title="OCR Text Extraction API",
-    description="Extract text from images using EasyOCR",
+    description="API for extracting text from images using EasyOCR and TrOCR",
     version="1.0.0"
 )
 
-# Add CORS middleware
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,146 +25,270 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize EasyOCR reader (cached globally)
-reader = easyocr.Reader(['en'], gpu=False)
+# Global variables for models
+easyocr_reader = None
+trocr_processor = None
+trocr_model = None
 
-@app.get("/", tags=["Health"])
+def load_easyocr():
+    """Load EasyOCR reader"""
+    global easyocr_reader
+    if easyocr_reader is None:
+        easyocr_reader = easyocr.Reader(['en'], gpu=False)
+    return easyocr_reader
+
+def load_trocr():
+    """Load TrOCR models"""
+    global trocr_processor, trocr_model
+    if trocr_processor is None or trocr_model is None:
+        try:
+            trocr_processor = TrOCRProcessor.from_pretrained("microsoft/trocr-base-handwritten")
+            trocr_model = VisionEncoderDecoderModel.from_pretrained("microsoft/trocr-base-handwritten")
+            trocr_model.eval()
+        except Exception as e:
+            print(f"Error loading TrOCR: {e}")
+    return trocr_processor, trocr_model
+
+def calculate_similarity(extracted_text: str, expected_text: str):
+    """Calculate text similarity"""
+    extracted_clean = extracted_text.strip()
+    expected_clean = expected_text.strip()
+    
+    total_chars_expected = len(expected_clean)
+    total_chars_extracted = len(extracted_clean)
+    
+    matches = 0
+    diff = list(difflib.ndiff(expected_clean, extracted_clean))
+    
+    for item in diff:
+        if item.startswith('  '):
+            matches += 1
+    
+    if total_chars_expected == 0:
+        similarity_score = 1.0 if total_chars_extracted == 0 else 0.0
+    else:
+        similarity_score = matches / max(total_chars_expected, total_chars_extracted)
+    
+    return {
+        'similarity_score': similarity_score * 100,
+        'matches': matches,
+        'total_expected': total_chars_expected,
+        'total_extracted': total_chars_extracted,
+        'character_accuracy': (matches / total_chars_expected) * 100 if total_chars_expected > 0 else 0
+    }
+
+@app.get("/")
 async def root():
-    """Root endpoint - API health check"""
+    """Root endpoint"""
     return {
-        "message": "OCR Text Extraction API is running!",
-        "status": "healthy",
+        "message": "OCR Text Extraction API",
         "version": "1.0.0",
-        "supported_languages": reader.lang_list
+        "endpoints": {
+            "extract_text": "/api/extract",
+            "verify_text": "/api/verify",
+            "health": "/api/health"
+        }
     }
 
-@app.get("/health", tags=["Health"])
+@app.get("/api/health")
 async def health_check():
-    """Detailed health check endpoint"""
+    """Health check endpoint"""
     return {
         "status": "healthy",
-        "service": "OCR Text Extraction API",
-        "supported_languages": reader.lang_list,
-        "supported_formats": ["PNG", "JPG", "JPEG"],
-        "version": "1.0.0"
+        "easyocr_loaded": easyocr_reader is not None,
+        "trocr_loaded": trocr_processor is not None and trocr_model is not None
     }
 
-@app.post("/api/v1/extract-text", tags=["OCR"])
+@app.post("/api/extract")
 async def extract_text(
     file: UploadFile = File(...),
-    min_confidence: float = 0.1
+    text_type: str = Form(default="printed"),
+    min_confidence: float = Form(default=0.1)
 ):
     """
-    Extract text from uploaded image file
+    Extract text from an uploaded image
     
     Parameters:
     - file: Image file (PNG, JPG, JPEG)
+    - text_type: 'printed' or 'handwritten'
     - min_confidence: Minimum confidence threshold (0.0 to 1.0)
     
     Returns:
-    - JSON response with extracted text and metadata
+    - extracted_text: Complete extracted text
+    - regions: List of detected text regions with coordinates and confidence
+    - processing_time: Time taken to process the image
     """
-    
-    # Validate file type
-    if not file.content_type or not file.content_type.startswith('image/'):
-        raise HTTPException(
-            status_code=400, 
-            detail="Invalid file type. Please upload an image file (PNG, JPG, JPEG)."
-        )
-    
-    # Validate confidence threshold
-    if not (0.0 <= min_confidence <= 1.0):
-        raise HTTPException(
-            status_code=400,
-            detail="min_confidence must be between 0.0 and 1.0"
-        )
-    
     try:
-        # Read uploaded file
-        image_bytes = await file.read()
+        import time
+        start_time = time.time()
         
-        # Convert to PIL Image
-        image_pil = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-        image_np = np.array(image_pil)
+        # Read image
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents)).convert('RGB')
+        image_np = np.array(image)
         
-        # Run OCR
-        results = reader.readtext(image_np)
+        # Load EasyOCR
+        reader = load_easyocr()
         
-        # Filter results by confidence threshold
+        # Process based on text type
+        if text_type.lower() == "handwritten":
+            processor, model = load_trocr()
+            if processor is None or model is None:
+                raise HTTPException(status_code=500, detail="TrOCR models not available")
+            
+            # Detect regions with EasyOCR
+            easyocr_results = reader.readtext(image_np)
+            
+            results = []
+            for bbox, _, confidence in easyocr_results:
+                # Extract region coordinates
+                x_coords = [point[0] for point in bbox]
+                y_coords = [point[1] for point in bbox]
+                x_min, x_max = int(min(x_coords)), int(max(x_coords))
+                y_min, y_max = int(min(y_coords)), int(max(y_coords))
+                
+                # Crop and process with TrOCR
+                cropped = image.crop((x_min, y_min, x_max, y_max))
+                pixel_values = processor(cropped, return_tensors="pt").pixel_values
+                generated_ids = model.generate(pixel_values)
+                text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+                
+                results.append((bbox, text, confidence))
+        else:
+            # Standard EasyOCR for printed text
+            results = reader.readtext(image_np)
+        
+        # Filter by confidence
         filtered_results = [
             (bbox, text, prob) for bbox, text, prob in results 
             if prob >= min_confidence
         ]
         
-        # Process results
-        extracted_data = []
-        full_text = ""
-        
-        for i, (bbox, text, confidence) in enumerate(filtered_results):
-            extracted_data.append({
-                "region_id": i + 1,
+        # Format response
+        regions = []
+        for bbox, text, confidence in filtered_results:
+            regions.append({
                 "text": text,
-                "confidence": round(float(confidence), 3),
+                "confidence": float(confidence),
                 "bounding_box": {
-                    "top_left": [int(bbox[0][0]), int(bbox[0][1])],
-                    "top_right": [int(bbox[1][0]), int(bbox[1][1])],
-                    "bottom_right": [int(bbox[2][0]), int(bbox[2][1])],
-                    "bottom_left": [int(bbox[3][0]), int(bbox[3][1])]
+                    "top_left": [float(bbox[0][0]), float(bbox[0][1])],
+                    "top_right": [float(bbox[1][0]), float(bbox[1][1])],
+                    "bottom_right": [float(bbox[2][0]), float(bbox[2][1])],
+                    "bottom_left": [float(bbox[3][0]), float(bbox[3][1])]
                 }
             })
-            full_text += text + " "
         
-        # Calculate statistics
-        total_regions = len(filtered_results)
-        avg_confidence = (
-            sum(prob for _, _, prob in filtered_results) / total_regions
-            if total_regions > 0 else 0
-        )
-        total_characters = sum(len(text) for _, text, _ in filtered_results)
+        extracted_text = " ".join([r["text"] for r in regions])
+        processing_time = time.time() - start_time
         
-        # Prepare response
-        response_data = {
-            "status": "success",
-            "message": "Text extraction completed successfully",
-            "data": {
-                "extracted_text": full_text.strip(),
-                "regions": extracted_data,
-                "statistics": {
-                    "total_regions": total_regions,
-                    "average_confidence": round(avg_confidence, 3),
-                    "total_characters": total_characters,
-                    "min_confidence_used": min_confidence
-                },
-                "metadata": {
-                    "filename": file.filename,
-                    "file_size_bytes": len(image_bytes),
-                    "image_dimensions": {
-                        "width": image_pil.width,
-                        "height": image_pil.height
-                    },
-                    "supported_languages": reader.lang_list
-                }
-            }
-        }
-        
-        return JSONResponse(
-            status_code=200,
-            content=response_data
-        )
+        return JSONResponse({
+            "success": True,
+            "extracted_text": extracted_text,
+            "total_regions": len(regions),
+            "regions": regions,
+            "processing_time": round(processing_time, 2),
+            "text_type": text_type
+        })
         
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"OCR processing failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/v1/supported-languages", tags=["Info"])
-async def get_supported_languages():
-    """Get list of supported languages"""
-    return {
-        "supported_languages": reader.lang_list,
-        "default_language": "en"
-    }
+@app.post("/api/verify")
+async def verify_text(
+    file: UploadFile = File(...),
+    expected_text: str = Form(...),
+    text_type: str = Form(default="printed"),
+    min_confidence: float = Form(default=0.1)
+):
+    """
+    Extract text from image and verify against expected text
+    
+    Parameters:
+    - file: Image file (PNG, JPG, JPEG)
+    - expected_text: Expected text to compare against
+    - text_type: 'printed' or 'handwritten'
+    - min_confidence: Minimum confidence threshold (0.0 to 1.0)
+    
+    Returns:
+    - extracted_text: Text extracted from image
+    - expected_text: Text provided for comparison
+    - similarity_score: Percentage similarity (0-100)
+    - character_accuracy: Accuracy of character matching
+    - verification_result: 'excellent', 'good', 'fair', or 'poor'
+    """
+    try:
+        import time
+        start_time = time.time()
+        
+        # First extract text using the extract endpoint logic
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents)).convert('RGB')
+        image_np = np.array(image)
+        
+        reader = load_easyocr()
+        
+        if text_type.lower() == "handwritten":
+            processor, model = load_trocr()
+            if processor is None or model is None:
+                raise HTTPException(status_code=500, detail="TrOCR models not available")
+            
+            easyocr_results = reader.readtext(image_np)
+            results = []
+            for bbox, _, confidence in easyocr_results:
+                x_coords = [point[0] for point in bbox]
+                y_coords = [point[1] for point in bbox]
+                x_min, x_max = int(min(x_coords)), int(max(x_coords))
+                y_min, y_max = int(min(y_coords)), int(max(y_coords))
+                
+                cropped = image.crop((x_min, y_min, x_max, y_max))
+                pixel_values = processor(cropped, return_tensors="pt").pixel_values
+                generated_ids = model.generate(pixel_values)
+                text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+                
+                results.append((bbox, text, confidence))
+        else:
+            results = reader.readtext(image_np)
+        
+        filtered_results = [
+            (bbox, text, prob) for bbox, text, prob in results 
+            if prob >= min_confidence
+        ]
+        
+        extracted_text = " ".join([text for _, text, _ in filtered_results])
+        
+        # Calculate similarity
+        similarity_metrics = calculate_similarity(extracted_text, expected_text)
+        
+        # Determine verification result
+        score = similarity_metrics['similarity_score']
+        if score >= 90:
+            verification_result = "excellent"
+        elif score >= 75:
+            verification_result = "good"
+        elif score >= 50:
+            verification_result = "fair"
+        else:
+            verification_result = "poor"
+        
+        processing_time = time.time() - start_time
+        
+        return JSONResponse({
+            "success": True,
+            "extracted_text": extracted_text,
+            "expected_text": expected_text,
+            "similarity_score": round(similarity_metrics['similarity_score'], 2),
+            "character_accuracy": round(similarity_metrics['character_accuracy'], 2),
+            "matches": similarity_metrics['matches'],
+            "total_expected_chars": similarity_metrics['total_expected'],
+            "total_extracted_chars": similarity_metrics['total_extracted'],
+            "verification_result": verification_result,
+            "processing_time": round(processing_time, 2),
+            "text_type": text_type
+        })
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
