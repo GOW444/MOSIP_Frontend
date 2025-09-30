@@ -143,7 +143,7 @@ def main():
                     st.metric("Total Characters", total_chars)
                 
                 # Download option
-                if st.button("Download Results as Text",icon=":material/download"):
+                if st.button("Download Results as Text",icon=":material/download:"):
                     text_content = "\n".join([
                         f"Region {i+1} (Confidence: {prob:.3f}): {text}"
                         for i, (_, text, prob) in enumerate(filtered_results)
@@ -185,5 +185,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
