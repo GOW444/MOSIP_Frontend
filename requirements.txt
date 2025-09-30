@@ -9,9 +9,13 @@ numpy>=1.24.0
 # Deep Learning dependencies
 torch>=2.0.0
 torchvision>=0.15.0
-transformers
-happytransformer
-sentencepiece
+transformers>=4.30.0
+happytransformer>=2.4.0
+sentencepiece>=0.1.99
+
+# Fix for happytransformer compatibility
+datasets>=2.14.0
+pyarrow>=12.0.0
 
 # API dependencies
 fastapi>=0.104.0
