@@ -13,7 +13,7 @@ st.set_page_config(
 
 st.title(":material/api: OCR Text Extraction API")
 st.markdown("Complete API documentation and testing interface for the OCR service")
-
+st.page_link("app.py", label="Back", icon=":material/chevron_backward:")
 # Tabs for different sections
 tab1, tab2, tab3, tab4 = st.tabs([
     ":material/description: Overview", 
