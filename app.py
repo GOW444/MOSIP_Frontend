@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import cv2
 import numpy as np
 import io
+import difflib
 
 # Set page configuration
 st.set_page_config(
@@ -42,6 +43,89 @@ def draw_bounding_boxes(image_np, results):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
     
     return image_with_boxes
+
+def calculate_character_similarity(extracted_text, expected_text):
+    """Calculate character-by-character similarity and highlight differences"""
+    # Normalize texts for comparison
+    extracted_clean = extracted_text.strip()
+    expected_clean = expected_text.strip()
+    
+    # Calculate basic metrics
+    total_chars_expected = len(expected_clean)
+    total_chars_extracted = len(extracted_clean)
+    
+    # Character-by-character comparison
+    matches = 0
+    mismatches = []
+    
+    # Use difflib for detailed comparison
+    diff = list(difflib.ndiff(expected_clean, extracted_clean))
+    
+    # Process diff results
+    expected_pos = 0
+    extracted_pos = 0
+    
+    for item in diff:
+        if item.startswith('  '):  # Match
+            matches += 1
+            expected_pos += 1
+            extracted_pos += 1
+        elif item.startswith('- '):  # Character in expected but missing in extracted
+            mismatches.append({
+                'type': 'missing',
+                'position': expected_pos,
+                'expected_char': item[2:],
+                'actual_char': None
+            })
+            expected_pos += 1
+        elif item.startswith('+ '):  # Extra character in extracted
+            mismatches.append({
+                'type': 'extra',
+                'position': extracted_pos,
+                'expected_char': None,
+                'actual_char': item[2:]
+            })
+            extracted_pos += 1
+    
+    # Calculate similarity score
+    if total_chars_expected == 0:
+        similarity_score = 1.0 if total_chars_extracted == 0 else 0.0
+    else:
+        similarity_score = matches / max(total_chars_expected, total_chars_extracted)
+    
+    return {
+        'similarity_score': similarity_score,
+        'matches': matches,
+        'total_mismatches': len(mismatches),
+        'mismatches': mismatches,
+        'expected_length': total_chars_expected,
+        'extracted_length': total_chars_extracted,
+        'character_accuracy': (matches / total_chars_expected) * 100 if total_chars_expected > 0 else 0
+    }
+
+def highlight_text_differences(extracted_text, expected_text):
+    """Create highlighted HTML showing differences between texts"""
+    matcher = difflib.SequenceMatcher(None, expected_text, extracted_text)
+    
+    expected_html = ""
+    extracted_html = ""
+    
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        expected_chunk = expected_text[i1:i2]
+        extracted_chunk = extracted_text[j1:j2]
+        
+        if tag == 'equal':
+            expected_html += f"<span style='background-color: #d4edda;'>{expected_chunk}</span>"
+            extracted_html += f"<span style='background-color: #d4edda;'>{extracted_chunk}</span>"
+        elif tag == 'delete':
+            expected_html += f"<span style='background-color: #f8d7da; text-decoration: line-through;'>{expected_chunk}</span>"
+        elif tag == 'insert':
+            extracted_html += f"<span style='background-color: #fff3cd;'>{extracted_chunk}</span>"
+        elif tag == 'replace':
+            expected_html += f"<span style='background-color: #f8d7da; text-decoration: line-through;'>{expected_chunk}</span>"
+            extracted_html += f"<span style='background-color: #fff3cd;'>{extracted_chunk}</span>"
+    
+    return expected_html, extracted_html
 
 def main():
     st.title("🔍 OCR Text Extraction App")
@@ -105,6 +189,100 @@ def main():
                 # Summary section
                 all_text = " ".join([text for _, text, _ in filtered_results])
                 st.text_area("Complete Extracted Text", value=all_text, height=100)
+                
+                # NEW VERIFICATION SECTION
+                st.divider()
+                st.subheader(":material/verified: Text Verification")
+                st.markdown("Enter the expected text to verify OCR accuracy")
+                
+                # User input for expected text
+                expected_text = st.text_area(
+                    "Enter Expected Text",
+                    placeholder="Paste or type the text you expect to see in the image...",
+                    height=100,
+                    help="Enter the complete text that should have been extracted from the image"
+                )
+                
+                if expected_text.strip():
+                    if st.button("Verify Text Accuracy", icon=":material/fact_check:", type="primary"):
+                        with st.spinner("Analyzing text differences..."):
+                            # Calculate similarity
+                            comparison_result = calculate_character_similarity(all_text, expected_text)
+                            
+                            # Display results
+                            col_score, col_metrics = st.columns([1, 1])
+                            
+                            with col_score:
+                                # Overall similarity score
+                                score = comparison_result['similarity_score']
+                                score_percent = score * 100
+                                
+                                if score_percent >= 90:
+                                    st.success(f"✅ Excellent Match: {score_percent:.1f}%")
+                                elif score_percent >= 75:
+                                    st.warning(f"⚠️ Good Match: {score_percent:.1f}%")
+                                elif score_percent >= 50:
+                                    st.warning(f"⚠️ Fair Match: {score_percent:.1f}%")
+                                else:
+                                    st.error(f"❌ Poor Match: {score_percent:.1f}%")
+                                
+                                # Progress bar
+                                st.progress(score)
+                            
+                            with col_metrics:
+                                # Detailed metrics
+                                st.metric("Character Accuracy", f"{comparison_result['character_accuracy']:.1f}%")
+                                st.metric("Correct Characters", f"{comparison_result['matches']}")
+                                st.metric("Total Mismatches", f"{comparison_result['total_mismatches']}")
+                            
+                            # Detailed comparison
+                            if comparison_result['total_mismatches'] > 0:
+                                st.subheader("Detailed Text Comparison")
+                                
+                                # Highlight differences
+                                expected_html, extracted_html = highlight_text_differences(all_text, expected_text)
+                                
+                                comp_col1, comp_col2 = st.columns(2)
+                                
+                                with comp_col1:
+                                    st.markdown("**Expected Text:**")
+                                    st.markdown(expected_html, unsafe_allow_html=True)
+                                
+                                with comp_col2:
+                                    st.markdown("**Extracted Text:**")
+                                    st.markdown(extracted_html, unsafe_allow_html=True)
+                                
+                                # Legend
+                                st.markdown("""
+                                **Legend:**
+                                - <span style='background-color: #d4edda;'>Green: Matching characters</span>
+                                - <span style='background-color: #f8d7da;'>Red: Missing characters</span>
+                                - <span style='background-color: #fff3cd;'>Yellow: Extra/incorrect characters</span>
+                                """, unsafe_allow_html=True)
+                                
+                                # Error analysis
+                                st.subheader("Error Analysis")
+                                
+                                if comparison_result['mismatches']:
+                                    error_types = {'missing': 0, 'extra': 0}
+                                    for mismatch in comparison_result['mismatches']:
+                                        error_types[mismatch['type']] += 1
+                                    
+                                    error_col1, error_col2, error_col3 = st.columns(3)
+                                    
+                                    with error_col1:
+                                        st.metric("Missing Characters", error_types['missing'])
+                                    with error_col2:
+                                        st.metric("Extra Characters", error_types['extra'])
+                                    with error_col3:
+                                        length_diff = abs(comparison_result['extracted_length'] - comparison_result['expected_length'])
+                                        st.metric("Length Difference", length_diff)
+                                
+                                # Common OCR errors
+                                st.info("💡 **Common OCR Issues:** Characters like 'O' vs '0', 'I' vs 'l', 'rn' vs 'm' are frequently misread")
+                            
+                            else:
+                                st.success("🎉 Perfect match! The extracted text exactly matches the expected text.")
                 
                 # Detailed results
                 st.subheader("Detailed Detection Results")
@@ -176,7 +354,8 @@ def main():
                - Complete extracted text
                - Detailed results for each detected region
                - Statistics about the detection
-            4. **Download**: Save the extracted text as a file
+            4. **Verify Accuracy**: Enter expected text to check OCR accuracy
+            5. **Download**: Save the extracted text as a file
             
             **Tips for better results:**
             - Use high-resolution images with clear text
@@ -187,9 +366,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
