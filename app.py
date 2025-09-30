@@ -104,7 +104,7 @@ def calculate_character_similarity(extracted_text, expected_text):
     }
 
 def highlight_text_differences(extracted_text, expected_text):
-    """Create highlighted HTML showing differences between texts"""
+    """Create highlighted HTML showing differences between texts with better visibility"""
     matcher = difflib.SequenceMatcher(None, expected_text, extracted_text)
     
     expected_html = ""
@@ -115,15 +115,19 @@ def highlight_text_differences(extracted_text, expected_text):
         extracted_chunk = extracted_text[j1:j2]
         
         if tag == 'equal':
-            expected_html += f"<span style='background-color: #d4edda;'>{expected_chunk}</span>"
-            extracted_html += f"<span style='background-color: #d4edda;'>{extracted_chunk}</span>"
+            # Matching text - light blue background with default text color
+            expected_html += f"<span style='background-color: #e3f2fd; padding: 1px 2px; border-radius: 3px;'>{expected_chunk}</span>"
+            extracted_html += f"<span style='background-color: #e3f2fd; padding: 1px 2px; border-radius: 3px;'>{extracted_chunk}</span>"
         elif tag == 'delete':
-            expected_html += f"<span style='background-color: #f8d7da; text-decoration: line-through;'>{expected_chunk}</span>"
+            # Missing in extracted - light red background with strikethrough
+            expected_html += f"<span style='background-color: #ffebee; padding: 1px 2px; border-radius: 3px; text-decoration: line-through; border: 1px solid #ffcdd2;'>{expected_chunk}</span>"
         elif tag == 'insert':
-            extracted_html += f"<span style='background-color: #fff3cd;'>{extracted_chunk}</span>"
+            # Extra in extracted - light yellow background with border
+            extracted_html += f"<span style='background-color: #fff8e1; padding: 1px 2px; border-radius: 3px; border: 1px solid #ffcc02;'>{extracted_chunk}</span>"
         elif tag == 'replace':
-            expected_html += f"<span style='background-color: #f8d7da; text-decoration: line-through;'>{expected_chunk}</span>"
-            extracted_html += f"<span style='background-color: #fff3cd;'>{extracted_chunk}</span>"
+            # Different text - light red for expected, light yellow for extracted
+            expected_html += f"<span style='background-color: #ffebee; padding: 1px 2px; border-radius: 3px; text-decoration: line-through; border: 1px solid #ffcdd2;'>{expected_chunk}</span>"
+            extracted_html += f"<span style='background-color: #fff8e1; padding: 1px 2px; border-radius: 3px; border: 1px solid #ffcc02;'>{extracted_chunk}</span>"
     
     return expected_html, extracted_html
 
@@ -255,10 +259,11 @@ def main():
                                 # Legend
                                 st.markdown("""
                                 **Legend:**
-                                - <span style='background-color: #d4edda;'>Green: Matching characters</span>
-                                - <span style='background-color: #f8d7da;'>Red: Missing characters</span>
-                                - <span style='background-color: #fff3cd;'>Yellow: Extra/incorrect characters</span>
+                                - <span style='background-color: #e3f2fd; padding: 1px 4px; border-radius: 3px;'>Light Blue: Matching characters</span>
+                                - <span style='background-color: #ffebee; padding: 1px 4px; border-radius: 3px; text-decoration: line-through; border: 1px solid #ffcdd2;'>Light Pink: Missing characters (strikethrough)</span>
+                                - <span style='background-color: #fff8e1; padding: 1px 4px; border-radius: 3px; border: 1px solid #ffcc02;'>Light Yellow: Extra/incorrect characters (with border)</span>
                                 """, unsafe_allow_html=True)
+
                                 
                                 # Error analysis
                                 st.subheader("Error Analysis")
@@ -366,3 +371,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
