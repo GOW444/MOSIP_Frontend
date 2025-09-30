@@ -1,14 +1,19 @@
-# Existing dependencies
+# Core dependencies
 streamlit>=1.28.0
 easyocr>=1.7.0
 opencv-python-headless>=4.8.0
 pillow>=10.0.0
 matplotlib>=3.7.0
 numpy>=1.24.0
+
+# Deep Learning dependencies
 torch>=2.0.0
 torchvision>=0.15.0
+transformers
+happytransformer
+sentencepiece
 
-# New API dependencies
+# API dependencies
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
