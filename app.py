@@ -76,7 +76,7 @@ def main():
             
             with col1:
                 st.subheader("Original Image")
-                st.image(image_pil, caption="Uploaded Image", use_column_width=True)
+                st.image(image_pil, caption="Uploaded Image", width="stretch")
             
             # Run OCR
             with st.spinner("Processing image with OCR..."):
@@ -92,7 +92,7 @@ def main():
                 if show_bounding_boxes and filtered_results:
                     st.subheader("Detected Text Regions")
                     image_with_boxes = draw_bounding_boxes(image_np, filtered_results)
-                    st.image(image_with_boxes, caption="Text Detection Results", use_column_width=True)
+                    st.image(image_with_boxes, caption="Text Detection Results", width="stretch")
                 else:
                     st.subheader("Processing Complete")
                     st.success(f"Found {len(filtered_results)} text regions")
@@ -185,3 +185,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
