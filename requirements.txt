@@ -10,8 +10,8 @@ numpy>=1.24.0
 torch>=2.0.0
 torchvision>=0.15.0
 transformers>=4.30.0
-happytransformer>=2.4.0
 sentencepiece>=0.1.99
+happytransformer>=2.4.0
 
 # Fix for happytransformer compatibility
 datasets>=2.14.0
