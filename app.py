@@ -166,7 +166,7 @@ def main():
         # Instructions when no file is uploaded
         st.info("👆 Upload an image file to get started!")
         
-        with st.expander("ℹ️ How to use this app"):
+        with st.expander("How to use this app",icon=":material/info:"):
             st.markdown("""
             1. **Upload Image**: Click on 'Browse files' and select a PNG, JPG, or JPEG image
             2. **Adjust Settings**: Use the sidebar to modify confidence threshold and display options
@@ -181,10 +181,12 @@ def main():
             - Use high-resolution images with clear text
             - Ensure good contrast between text and background
             - Avoid blurry or distorted images
+            - Upload zoomed imaged if text is small
             """)
 
 if __name__ == "__main__":
     main()
+
 
 
 
