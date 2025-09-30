@@ -104,7 +104,7 @@ def calculate_character_similarity(extracted_text, expected_text):
     }
 
 def highlight_text_differences(extracted_text, expected_text):
-    """Create highlighted HTML showing differences between texts with better visibility"""
+    """Create clear text comparison without colors, using only text formatting"""
     matcher = difflib.SequenceMatcher(None, expected_text, extracted_text)
     
     expected_html = ""
@@ -115,21 +115,22 @@ def highlight_text_differences(extracted_text, expected_text):
         extracted_chunk = extracted_text[j1:j2]
         
         if tag == 'equal':
-            # Matching text - light blue background with default text color
-            expected_html += f"<span style='background-color: #e3f2fd; padding: 1px 2px; border-radius: 3px;'>{expected_chunk}</span>"
-            extracted_html += f"<span style='background-color: #e3f2fd; padding: 1px 2px; border-radius: 3px;'>{extracted_chunk}</span>"
+            # Matching text - plain text
+            expected_html += expected_chunk
+            extracted_html += extracted_chunk
         elif tag == 'delete':
-            # Missing in extracted - light red background with strikethrough
-            expected_html += f"<span style='background-color: #ffebee; padding: 1px 2px; border-radius: 3px; text-decoration: line-through; border: 1px solid #ffcdd2;'>{expected_chunk}</span>"
+            # Missing in extracted - strikethrough only
+            expected_html += f"<del>{expected_chunk}</del>"
         elif tag == 'insert':
-            # Extra in extracted - light yellow background with border
-            extracted_html += f"<span style='background-color: #fff8e1; padding: 1px 2px; border-radius: 3px; border: 1px solid #ffcc02;'>{extracted_chunk}</span>"
+            # Extra in extracted - underline only
+            extracted_html += f"<u>{extracted_chunk}</u>"
         elif tag == 'replace':
-            # Different text - light red for expected, light yellow for extracted
-            expected_html += f"<span style='background-color: #ffebee; padding: 1px 2px; border-radius: 3px; text-decoration: line-through; border: 1px solid #ffcdd2;'>{expected_chunk}</span>"
-            extracted_html += f"<span style='background-color: #fff8e1; padding: 1px 2px; border-radius: 3px; border: 1px solid #ffcc02;'>{extracted_chunk}</span>"
+            # Different text - strikethrough for expected, underline for extracted
+            expected_html += f"<del>{expected_chunk}</del>"
+            extracted_html += f"<u>{extracted_chunk}</u>"
     
     return expected_html, extracted_html
+
 
 def main():
     st.title("🔍 OCR Text Extraction App")
@@ -259,11 +260,10 @@ def main():
                                 # Legend
                                 st.markdown("""
                                 **Legend:**
-                                - <span style='background-color: #e3f2fd; padding: 1px 4px; border-radius: 3px;'>Light Blue: Matching characters</span>
-                                - <span style='background-color: #ffebee; padding: 1px 4px; border-radius: 3px; text-decoration: line-through; border: 1px solid #ffcdd2;'>Light Pink: Missing characters (strikethrough)</span>
-                                - <span style='background-color: #fff8e1; padding: 1px 4px; border-radius: 3px; border: 1px solid #ffcc02;'>Light Yellow: Extra/incorrect characters (with border)</span>
+                                - Normal text: Matching characters
+                                - <del>Strikethrough</del>: Missing characters in extracted text
+                                - <u>Underlined</u>: Extra/incorrect characters in extracted text
                                 """, unsafe_allow_html=True)
-
                                 
                                 # Error analysis
                                 st.subheader("Error Analysis")
@@ -371,4 +371,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
