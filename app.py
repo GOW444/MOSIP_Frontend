@@ -45,6 +45,7 @@ def draw_bounding_boxes(image_np, results):
 
 def main():
     st.title("🔍 OCR Text Extraction App")
+    st.page_link("pages/02_API_Documentation.py",label="API Docs",icon=":material/docs:")
     st.markdown("Upload a PNG, JPG, or JPEG image to extract text using EasyOCR")
     
     # Sidebar for additional options
@@ -186,6 +187,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
